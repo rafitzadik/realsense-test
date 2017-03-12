@@ -11,7 +11,7 @@ from scipy.stats import threshold
 
 thresh_lo = 500 # that's actually the physics of the R200 - it can detect from 50cm 
 thresh_hi = 1500 #ignore anything beyond 1m for now
-min_contour = 200 #area of smallest contour that we care about
+min_contour = 1000 #area of smallest contour that we care about
 
 pyrs.start()
 dev = pyrs.Device()
@@ -45,7 +45,10 @@ while True:
 
     rois = [] #regions of interest. each one is a tuple: (contour, area, center)
     for contour in contours:
-        if cv2.contourArea(contour) > min_contour:
+        r = cv2.minAreaRect(contour)
+        (_, (w,h), _) = r
+        if cv2.contourArea(contour) > min_contour and ( h / w > 1.5 or w / h > 1.5):
+            #print h, w, h/w
             M = cv2.moments(contour)
             rois.append( (contour, M['m00'], (int(M['m10']/M['m00']), int(M['m01']/M['m00']))))
 
