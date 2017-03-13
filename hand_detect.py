@@ -42,8 +42,11 @@ while True:
     thresh = threshold(pre_thresh, threshmin = thresh_lo, threshmax = thresh_hi, newval = 0) #throw out all values that are too small or too large
     thresh = threshold(thresh, threshmax = 1, newval = 255) #make remaining values 255
     thresh = thresh.astype(np.uint8)    
+    #now dilate the image: make more things white around white areas
+    kernel = np.ones((10,10), np.uint8)
+    thresh_dilation = cv2.dilate(thresh, kernel, iterations=1)
     #now find the contours
-    _, contours, _ = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    _, contours, _ = cv2.findContours(thresh_dilation,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
     rois = [] #regions of interest. each one is a tuple: (contour, area, center)
     #print
@@ -113,7 +116,7 @@ while True:
             #print depth
             pt = dev.deproject_pixel_to_point(pixel, depth)
             #print pt
-            cv2.putText(pic, '({:1.1f},{:1.1f},{:1.1f})'.format(pt[0], pt[1], pt[2]), palm_cent, cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+            cv2.putText(pic, '({:1.0f},{:1.0f},{:1.0f})'.format(pt[0]/10, pt[1]/10, pt[2]/10), (0,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
             
         #print the depth of the image center
         #cv2.putText(pic, str(d[roi[2][1],roi[2][0]])[:4], (roi[2][0],roi[2][1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
