@@ -12,6 +12,7 @@ from scipy.stats import threshold
 thresh_lo = 500 # that's actually the physics of the R200 - it can detect from 50cm 
 thresh_hi = 1500 #ignore anything beyond 1m for now
 min_contour = 1000 #area of smallest contour that we care about
+min_palm_circle = 10
 
 pyrs.start()
 dev = pyrs.Device()
@@ -37,18 +38,20 @@ while True:
     c = cv2.cvtColor(c, cv2.COLOR_RGB2BGR)
     #d = dev.depth * dev.depth_scale * 1000 #this makes d be the depth in mm
     d = dev.dac * dev.depth_scale * 1000 #this makes d be the depth in mm
-    thresh = threshold(d, threshmin = thresh_lo, threshmax = thresh_hi, newval = 0) #throw out all values that are too small or too large
+    pre_thresh = d
+    thresh = threshold(pre_thresh, threshmin = thresh_lo, threshmax = thresh_hi, newval = 0) #throw out all values that are too small or too large
     thresh = threshold(thresh, threshmax = 1, newval = 255) #make remaining values 255
     thresh = thresh.astype(np.uint8)    
     #now find the contours
     _, contours, _ = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 
     rois = [] #regions of interest. each one is a tuple: (contour, area, center)
+    #print
     for contour in contours:
         r = cv2.minAreaRect(contour)
-        (_, (w,h), _) = r
-        if cv2.contourArea(contour) > min_contour and ( h / w > 1.5 or w / h > 1.5):
-            #print h, w, h/w
+        (r_cent, (w,h), r_angle) = r
+        if cv2.contourArea(contour) > min_contour and (w / h > 1.5 or h / w > 1.5): #this just rejects squares, but ignores "mostly horizontal" or "mostly vertical". For that one would need to look both at w/h and at angle - neither is enough on its own...
+            #print h, w, h/w, r_angle
             M = cv2.moments(contour)
             rois.append( (contour, M['m00'], (int(M['m10']/M['m00']), int(M['m01']/M['m00']))))
 
@@ -89,17 +92,28 @@ while True:
         minx = (miny - y0) * vx/vy + x0
         maxx = (maxy - y0) * vx/vy + x0
         cv2.line(pic, (minx,miny), (maxx, maxy), (0,0,255))
-        #where is the line farthest from the contour edge?
-        cent = None
-        cent_d = 0
-        for y in range(int(maxy), int(miny) , -10):
+
+        #find the first local max enclosed circle greater than min_palm_circle
+        palm_cent = None
+        palm_cent_d = 0
+        for y in range(int(miny), int(maxy) , 10):
             x = (y - y0) * vx/vy + x0
-            d = cv2.pointPolygonTest(roi[0], (x,y), True)
-            if (d > cent_d):
-                cent = (x,y)
-                cent_d = d
-        if (cent != None):
-            cv2.circle(pic, cent, int(cent_d), [0,0,255], 2)
+            diameter = cv2.pointPolygonTest(roi[0], (x,y), True)
+            if (diameter > min_palm_circle and diameter > palm_cent_d):
+                palm_cent = (x,y)
+                palm_cent_d = diameter
+            if (palm_cent != None and diameter < 0.9 * palm_cent_d):
+                break #we reached a local min
+        if (palm_cent != None):
+            cv2.circle(pic, palm_cent, int(palm_cent_d), [0,0,255], 2)
+            pixel = np.array([palm_cent[0], palm_cent[1]], np.uint)
+            depth = np.array([d[pixel[1],pixel[0]]])
+            #depth = np.array([d[roi[2][1],roi[2][0]]])
+            #print pixel
+            #print depth
+            pt = dev.deproject_pixel_to_point(pixel, depth)
+            #print pt
+            cv2.putText(pic, '({:1.1f},{:1.1f},{:1.1f})'.format(pt[0], pt[1], pt[2]), palm_cent, cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
             
         #print the depth of the image center
         #cv2.putText(pic, str(d[roi[2][1],roi[2][0]])[:4], (roi[2][0],roi[2][1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
