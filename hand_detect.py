@@ -53,33 +53,44 @@ while True:
     for contour in contours:
         r = cv2.minAreaRect(contour)
         (r_cent, (w,h), r_angle) = r
-        if cv2.contourArea(contour) > min_contour and (w / h > 1.5 or h / w > 1.5): #this just rejects squares, but ignores "mostly horizontal" or "mostly vertical". For that one would need to look both at w/h and at angle - neither is enough on its own...
-            #print h, w, h/w, r_angle
-            M = cv2.moments(contour)
-            rois.append( (contour, M['m00'], (int(M['m10']/M['m00']), int(M['m01']/M['m00']))))
+        if (cv2.contourArea(contour) > min_contour and #enough area
+            (w / h > 1.5 or h / w > 1.5) and          #tall or long rect, not a square
+            (min([x for [[x,y]] in contour]) > 50)):      #not at the left most part
+                #print h, w, h/w, r_angle
+                M = cv2.moments(contour)
+                rois.append( (contour, M['m00'], (int(M['m10']/M['m00']), int(M['m01']/M['m00']))))
 
+    if (len(rois) > 0):   
+        hand = max(rois, key=lambda roi:roi[1])[0] # get the biggest roi as the hand
+    else:
+        hand = None
+    
     #draw the ROI's on a picture
-    mask = np.zeros(d.shape, np.uint8)   
-    for roi in rois:
-        cv2.drawContours(mask, [roi[0]], 0, 255, -1)
+#    mask = np.zeros(d.shape, np.uint8)   
+#    for roi in rois:
+#        cv2.drawContours(mask, [roi[0]], 0, 255, -1)
         #cv2.putText(pic, str(d[roi[2][1],roi[2][0]])[:4], (roi[2][0],roi[2][1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
 
     #thresh = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
     #pic = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-    pic = cv2.bitwise_and(c, c, mask=mask)
-    for roi in rois:
-        #get the convex hull
-        hull = cv2.convexHull(roi[0])
-        cv2.drawContours(pic,[hull],0,(0,0,255),2)
+#    pic = cv2.bitwise_and(c, c, mask=mask)
 
+    if (hand != None):
+        mask = np.zeros(d.shape, np.uint8)   
+        cv2.drawContours(mask, [hand], 0, 255, -1)
+        pic = cv2.bitwise_and(c, c, mask=mask)
+        #get the convex hull
+        hull = cv2.convexHull(hand)
+        cv2.drawContours(pic,[hull],0,(0,0,255),2)
+    
         #get a bounding rectangle
-        rect = cv2.minAreaRect(roi[0])
+        rect = cv2.minAreaRect(hand)
         box = cv2.boxPoints(rect)
         box = np.int0(box)
         cv2.drawContours(pic, [box], 0, (0,255,0),2)
 
-        #get the convexity defects
-        #this doesn't work on the depth map - it's too noisy, so commenting out
+    #get the convexity defects
+    #this doesn't work on the depth map - it's too noisy, so commenting out
 #        poly = cv2.approxPolyDP(roi[0], 0.001*cv2.arcLength(roi[0], True), True)
 #        hull_idx = cv2.convexHull(poly, returnPoints=False)
 #        defects = cv2.convexityDefects(poly, hull_idx)
@@ -89,19 +100,19 @@ while True:
 #            cv2.circle(pic, far, 5, [0,0,255],-1)
 
         #get a line approximation
-        (vx,vy,x0,y0) = cv2.fitLine(roi[0], cv2.DIST_L2, 0, 0.01, 0.01)        
-        miny = min([y for [(x,y)] in roi[0]])
-        maxy = max([y for [(x,y)] in roi[0]])
+        (vx,vy,x0,y0) = cv2.fitLine(hand, cv2.DIST_L2, 0, 0.01, 0.01)        
+        miny = min([y for [(x,y)] in hand])
+        maxy = max([y for [(x,y)] in hand])
         minx = (miny - y0) * vx/vy + x0
         maxx = (maxy - y0) * vx/vy + x0
         cv2.line(pic, (minx,miny), (maxx, maxy), (0,0,255))
-
+    
         #find the first local max enclosed circle greater than min_palm_circle
         palm_cent = None
         palm_cent_d = 0
         for y in range(int(miny), int(maxy) , 10):
             x = (y - y0) * vx/vy + x0
-            diameter = cv2.pointPolygonTest(roi[0], (x,y), True)
+            diameter = cv2.pointPolygonTest(hand, (x,y), True)
             if (diameter > min_palm_circle and diameter > palm_cent_d):
                 palm_cent = (x,y)
                 palm_cent_d = diameter
@@ -111,16 +122,10 @@ while True:
             cv2.circle(pic, palm_cent, int(palm_cent_d), [0,0,255], 2)
             pixel = np.array([palm_cent[0], palm_cent[1]], np.uint)
             depth = np.array([d[pixel[1],pixel[0]]])
-            #depth = np.array([d[roi[2][1],roi[2][0]]])
-            #print pixel
-            #print depth
             pt = dev.deproject_pixel_to_point(pixel, depth)
-            #print pt
-            cv2.putText(pic, '({:1.0f},{:1.0f},{:1.0f})'.format(pt[0]/10, pt[1]/10, pt[2]/10), (0,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+            cv2.putText(pic, '({:2.0f},{:2.0f},{:3.0f})'.format(pt[0]/10, pt[1]/10, pt[2]/10), (0,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+                
             
-        #print the depth of the image center
-        #cv2.putText(pic, str(d[roi[2][1],roi[2][0]])[:4], (roi[2][0],roi[2][1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
-        
     cd = np.concatenate((c,pic), axis=1)
 
     cv2.putText(cd, str(fps_smooth)[:4], (0,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255))
