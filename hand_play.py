@@ -58,7 +58,7 @@ def detect_hand(color, depth):
             break #we reached a local min
     return hand, palm_cent, palm_diameter
 
-def draw_hand(color, depth, hand, palm_cent, palm_diameter, pt):
+def draw_hand(color, depth, hand, palm_cent, palm_diameter, pt, pixel2, pixel3, pixel4):
         mask = np.zeros(depth.shape, np.uint8)   
         cv2.drawContours(mask, [hand], 0, 255, -1)
         pic = cv2.bitwise_and(color, color, mask=mask)
@@ -68,9 +68,18 @@ def draw_hand(color, depth, hand, palm_cent, palm_diameter, pt):
         if (palm_cent != None):
             cv2.circle(pic, palm_cent, int(palm_diameter), [0,0,255], 2)
             cv2.putText(pic, '({:2.0f},{:2.0f},{:3.0f})'.format(pt[0]/10, pt[1]/10, pt[2]/10), (0,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255,0))
+#            print palm_cent
+#            print pixel2
+#            print pixel3
+            if not np.isnan(pixel2[0]):
+                cv2.line(pic, palm_cent, pixel2, (0,255,0))
+            if not np.isnan(pixel3[0]):
+                cv2.line(pic, palm_cent, pixel3, (0,255,0))
+            if not np.isnan(pixel4[0]):
+                cv2.line(pic, palm_cent, pixel4, (0,255,0))
         return pic
 
-def update_ball(ball_pos, ball_v, dt, palm_cent, palm_center_depth):
+#def update_ball(ball_pos, ball_v, dt, palm_cent, palm_center_depth):
 #    ball_pos += [a * dt for a in ball_v]
 #    if (ball_pos[2] < 10):
 #        ball_v[0] = random()
@@ -83,7 +92,7 @@ def update_ball(ball_pos, ball_v, dt, palm_cent, palm_center_depth):
 #    elif (hits(ball_pos, palm_center, palm_center_depth) || ball_pos[2] > 3000):
 #        ball_v = []
     
-    return ball_pos, ball_v
+#    return ball_pos, ball_v
     
 #def draw_ball(ball_pos, pic):
     
@@ -123,11 +132,26 @@ if __name__ == '__main__':
             pixel = np.array([palm_cent[0], palm_cent[1]], np.uint)
             depth = np.array([d[pixel[1],pixel[0]]])
             palm_cent_3d = dev.deproject_pixel_to_point(pixel, depth)
+            p2 = np.array([palm_cent[0] + 10, palm_cent[1]], np.uint)
+            d2 = np.array([d[p2[1],p2[0]]])
+            p2_3d = dev.deproject_pixel_to_point(p2, d2)
+            p3 = np.array([palm_cent[0] , palm_cent[1] + 10], np.uint)
+            d3 = np.array([d[p3[1],p3[0]]])
+            p3_3d = dev.deproject_pixel_to_point(p3, d3)
+            p2_3d_d = p2_3d - palm_cent_3d
+            p2_3d_n = p2_3d_d / np.linalg.norm(p2_3d_d) 
+            p3_3d_d = p3_3d - palm_cent_3d
+            p3_3d_n = p3_3d_d / np.linalg.norm(p3_3d_d) 
+            p2_map = tuple(dev.project_point_to_pixel(palm_cent_3d+p2_3d_n*30))
+            p3_map = tuple(dev.project_point_to_pixel(palm_cent_3d+p3_3d_n*30))
+            p4_3d_d = np.array([p2_3d_n[1]*p3_3d_n[2] - p2_3d_n[2]*p3_3d_n[1], p2_3d_n[2]*p3_3d_n[0] - p2_3d_n[0]*p3_3d_n[2], p2_3d_n[0]*p3_3d_n[1] - p2_3d_n[1]*p3_3d_n[0]])
+            p4_3d_n = p4_3d_d / np.linalg.norm(p4_3d_d)
+            p4_map = tuple(dev.project_point_to_pixel(palm_cent_3d-p4_3d_n*30))
         else:
-            palm_cent_3d = None
+            palm_cent_3d = p2_map = p3_map = p4_map = None
 
         if (hand != None):
-            pic = draw_hand(c,d,hand, palm_cent, palm_diameter, palm_cent_3d)
+            pic = draw_hand(c,d,hand, palm_cent, palm_diameter, palm_cent_3d, p2_map, p3_map, p4_map)
         else:
             pic = np.zeros(c.shape, np.uint8)
     
